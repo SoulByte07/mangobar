@@ -1171,6 +1171,8 @@ static int append_module_entries(Bar *bar, int id, ModuleEntry *ents, int max,
     if (!custom_module_text(bar, ci, texts[(*text_n)], 256,
                             names[(*name_n)], 96))
       return 0;
+    if (texts[(*text_n)][0] == '\0')
+      return 0;
     ModuleEntry *me = &ents[n++];
     *me = (ModuleEntry){.text = texts[(*text_n)++],
                         .st = &g_rt->st_custom[ci],
@@ -1497,6 +1499,8 @@ static void fit_text_width(const char *text, char *out, size_t outsz,
 static uint32_t module_entry_width(const ModuleEntry *e) {
   if (e->is_tray)
     return e->width;
+  if (!e->text || !*e->text)
+    return 0;
   int32_t mn, mx;
   uint32_t tw = text_metrics(e->text, &mn, &mx);
   uint32_t body = tw + e->st->pad_l + e->st->pad_r;
