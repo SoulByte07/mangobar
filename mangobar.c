@@ -214,6 +214,7 @@ static void apply_css_resolved(ModuleStyle *ms, Style s);
 // profile's bar_height and custom module set.
 typedef struct {
   ModuleStyle st_tags[5];
+  ModuleStyle st_tags_box;
   ModuleStyle st_tags_hover_scratch;
   Style st_tag_hover_css;
   ModuleStyle st_layout, st_title, st_clock, st_clock_date, st_cpu, st_mem;
@@ -1119,6 +1120,7 @@ typedef struct {
   const char *module;
   int tag;
   bool is_tray;
+  bool is_tags;
   uint32_t width;
   int tray_icon_size;
 } ModuleEntry;
@@ -1219,26 +1221,10 @@ static int append_module_entries(Bar *bar, int id, ModuleEntry *ents, int max,
                                   .st = &g_rt->st_overview, .module = "tags",
                                   .tag = -1};
     } else {
-      for (int i = 0; i < bar->tag_count && n < max; i++) {
-        if (g_cfg.only_occupied && !(bar->ctags & (1 << i)) &&
-            !(bar->atags & (1 << i)) && !(g_cfg.pinned_tags & (1 << i)))
-          continue;
-        ModuleStyle *st;
-        if (bar->urg & (1 << i))
-          st = &g_rt->st_tags[2];
-        else if (bar->mtags & (1 << i))
-          st = &g_rt->st_tags[0];
-        else if (bar->ctags & (1 << i))
-          st = &g_rt->st_tags[1];
-        else
-          st = &g_rt->st_tags[3];
-        if (bar->hover_tag == i) {
-          g_rt->st_tags_hover_scratch = *st;
-          apply_css_resolved(&g_rt->st_tags_hover_scratch, g_rt->st_tag_hover_css);
-          st = &g_rt->st_tags_hover_scratch;
-        }
-        ents[n++] = (ModuleEntry){.text = g_cfg.tag_names[i], .st = st,
-                                  .module = "tags", .tag = i};
+      if (n < max) {
+        ents[n++] = (ModuleEntry){.text = "", .st = &g_rt->st_tags_box,
+                                  .module = "tags", .tag = -1,
+                                  .is_tags = true};
       }
     }
     break;
@@ -1538,6 +1524,186 @@ static EntryGeom layout_tray_entry(Bar *bar, const ModuleEntry *e, uint32_t x,
   return g;
 }
 
+static EntryGeom layout_tags_entry(Bar *bar, const ModuleEntry *e, uint32_t x,
+                                   uint32_t max_x, uint32_t buf_h);
+static void paint_tags_entry(Bar *bar, const ModuleEntry *e, const EntryGeom *g,
+                             uint32_t y, pixman_image_t *fg,
+                             pixman_image_t *fg_mask, pixman_image_t *bg,
+                             uint32_t buf_h);
+static EntryGeom layout_tags_entry(Bar *bar, const ModuleEntry *e, uint32_t x,
+                                   uint32_t max_x, uint32_t buf_h) {
+  EntryGeom g = {.x0 = x, .x1 = x, .x2 = x, .end = x, .paint = x};
+  ModuleStyle *box = e->st;
+  int count = 0;
+  int vis_tags[MANGOBAR_MAX_TAGS];
+  uint32_t widths[MANGOBAR_MAX_TAGS];
+  uint32_t inner_w = 0;
+
+  for (int i = 0; i < bar->tag_count; i++) {
+    if (g_cfg.only_occupied && !(bar->ctags & (1 << i)) &&
+        !(bar->atags & (1 << i)) && !(g_cfg.pinned_tags & (1 << i)))
+      continue;
+    ModuleStyle *st;
+    if (bar->urg & (1 << i))
+      st = &g_rt->st_tags[2];
+    else if (bar->mtags & (1 << i))
+      st = &g_rt->st_tags[0];
+    else if (bar->ctags & (1 << i))
+      st = &g_rt->st_tags[1];
+    else
+      st = &g_rt->st_tags[3];
+
+    const char *text = g_cfg.tag_names[i];
+    int32_t mn = 0, mx = 0;
+    uint32_t tw = text_metrics(text, &mn, &mx);
+    uint32_t body = tw + st->pad_l + st->pad_r;
+    uint32_t mw = body + st->margin_l + st->margin_r;
+    if ((int)mw < st->min_width)
+      mw = (uint32_t)st->min_width;
+    vis_tags[count] = i;
+    widths[count] = mw;
+    inner_w += mw;
+    count++;
+  }
+
+  if (count == 0)
+    return g;
+
+  uint32_t body_w = inner_w + box->pad_l + box->pad_r;
+  uint32_t mw = body_w + box->margin_l + box->margin_r;
+
+  uint32_t tag_x1 = x + box->margin_l;
+  uint32_t tag_body_w = body_w;
+  if (tag_x1 + tag_body_w > max_x)
+    tag_body_w = max_x > tag_x1 ? max_x - tag_x1 : 0;
+
+  g.x0 = x;
+  g.x1 = tag_x1;
+  g.x2 = tag_x1 + tag_body_w;
+  g.paint = g.x2;
+  g.end = x + mw;
+  if (g.end > max_x)
+    g.end = max_x;
+
+  uint32_t cur = tag_x1 + box->pad_l;
+  for (int i = 0; i < count; i++) {
+    uint32_t nx = cur + widths[i];
+    record_hotspot(bar, "tags", vis_tags[i], cur, nx);
+    cur = nx;
+  }
+  record_hotspot(bar, "tags", -1, g.x0, g.end);
+  (void)buf_h;
+  return g;
+}
+
+static void paint_tags_entry(Bar *bar, const ModuleEntry *e, const EntryGeom *g,
+                             uint32_t y, pixman_image_t *fg,
+                             pixman_image_t *fg_mask, pixman_image_t *bg,
+                             uint32_t buf_h) {
+  ModuleStyle *box = e->st;
+  uint32_t tag_x1 = g->x1;
+  uint32_t tag_body_w = g->x2 > g->x1 ? g->x2 - g->x1 : 0;
+  if (tag_body_w == 0)
+    return;
+
+  // 1. Draw outer bubble capsule
+  if (bar_bg_cr && box->bg.alpha > 0) {
+    cairo_pattern_t *pat = NULL;
+    if (box->bg_gradient) {
+      double x1d = (double)tag_x1, y1d = (double)g_rt->bar_top;
+      double x2d = (double)(tag_x1 + tag_body_w), y2d = (double)g_rt->bar_top;
+      if (box->gradient_dir == 1) {
+        x2d = x1d;
+        y1d = (double)(g_rt->bar_top + buf_h);
+        y2d = (double)g_rt->bar_top;
+      } else if (box->gradient_dir == 2) {
+        y2d = y1d;
+        x1d = (double)(tag_x1 + tag_body_w);
+        x2d = (double)tag_x1;
+      } else if (box->gradient_dir == 3) {
+        y2d = y1d;
+      } else {
+        x2d = x1d;
+        y2d = (double)(g_rt->bar_top + buf_h);
+      }
+      double r0, g0, b0, a0, r1, g1, b1, a1;
+      pixman_color_to_doubles(&box->bg, &r0, &g0, &b0, &a0);
+      pixman_color_to_doubles(&box->gradient_end, &r1, &g1, &b1, &a1);
+      pat = cairo_pattern_create_linear(x1d, y1d, x2d, y2d);
+      cairo_pattern_add_color_stop_rgba(pat, 0.0, r0, g0, b0, a0);
+      cairo_pattern_add_color_stop_rgba(pat, 1.0, r1, g1, b1, a1);
+      cairo_set_source(bar_bg_cr, pat);
+    } else {
+      double tr, tg, tb, ta;
+      pixman_color_to_doubles(&box->bg, &tr, &tg, &tb, &ta);
+      cairo_set_source_rgba(bar_bg_cr, tr, tg, tb, ta);
+    }
+    cairo_rounded_rect(bar_bg_cr, tag_x1, g_rt->bar_top, (double)tag_body_w,
+                       (double)buf_h, module_radius(box, buf_h));
+    cairo_fill(bar_bg_cr);
+    if (pat)
+      cairo_pattern_destroy(pat);
+  }
+
+  // 2. Draw tag buttons inside the bubble
+  int tpad = box->pad_l;
+  uint32_t cur = tag_x1 + (uint32_t)tpad;
+  for (int i = 0; i < bar->tag_count; i++) {
+    if (g_cfg.only_occupied && !(bar->ctags & (1 << i)) &&
+        !(bar->atags & (1 << i)) && !(g_cfg.pinned_tags & (1 << i)))
+      continue;
+    ModuleStyle *st;
+    if (bar->urg & (1 << i))
+      st = &g_rt->st_tags[2];
+    else if (bar->mtags & (1 << i))
+      st = &g_rt->st_tags[0];
+    else if (bar->ctags & (1 << i))
+      st = &g_rt->st_tags[1];
+    else
+      st = &g_rt->st_tags[3];
+
+    if (bar->hover_tag == i) {
+      g_rt->st_tags_hover_scratch = *st;
+      apply_css_resolved(&g_rt->st_tags_hover_scratch, g_rt->st_tag_hover_css);
+      st = &g_rt->st_tags_hover_scratch;
+    }
+
+    const char *text = g_cfg.tag_names[i];
+    int32_t mn = 0, mx = 0;
+    uint32_t tw = text_metrics(text, &mn, &mx);
+    uint32_t body = tw + st->pad_l + st->pad_r;
+    uint32_t mw = body + st->margin_l + st->margin_r;
+    if ((int)mw < st->min_width)
+      mw = (uint32_t)st->min_width;
+
+    uint32_t bx1 = cur + st->margin_l;
+    uint32_t bx2 = cur + mw - st->margin_r;
+
+    // Draw active/individual tag background if set and not transparent
+    if (bar_bg_cr && st->bg.alpha > 0) {
+      int rad = module_radius(st, buf_h);
+      double r, g_c, b, a;
+      pixman_color_to_doubles(&st->bg, &r, &g_c, &b, &a);
+      cairo_set_source_rgba(bar_bg_cr, r, g_c, b, a);
+      cairo_rounded_rect(bar_bg_cr, bx1, g_rt->bar_top, (double)(bx2 - bx1),
+                         (double)buf_h, rad);
+      cairo_fill(bar_bg_cr);
+    }
+
+    uint32_t text_x = bx1 + st->pad_l;
+    if (st->center) {
+      uint32_t btn_w = bx2 - bx1;
+      uint32_t inner = btn_w > (uint32_t)(st->pad_l + st->pad_r)
+                           ? btn_w - st->pad_l - st->pad_r
+                           : 0;
+      if (tw < inner)
+        text_x = bx1 + st->pad_l + (inner - tw) / 2;
+    }
+    draw_text(text, text_x, y, fg, fg_mask, NULL, &st->fg, NULL, bx2, buf_h);
+    cur += mw;
+  }
+}
+
 static void paint_tray_entry(Bar *bar, const ModuleEntry *e, const EntryGeom *g,
                              uint32_t y, pixman_image_t *fg,
                              pixman_image_t *fg_mask, pixman_image_t *bg,
@@ -1660,7 +1826,11 @@ static void entry_signature(const Bar *bar, const ModuleEntry *e, char *ident,
     key[ksz - 1] = '\0';
     return;
   }
-  if (e->is_tray) {
+  if (e->is_tags) {
+    if ((size_t)o < ksz - 40)
+      snprintf(key + o, ksz - (size_t)o, "|tags:%x:%x:%x:%x:%d",
+               bar->mtags, bar->atags, bar->ctags, bar->urg, bar->hover_tag);
+  } else if (e->is_tray) {
     int n = 0;
     MangobarTrayItem **items = tray_visible_items(tray, &n);
     uint64_t th = 1469598103934665603ULL;
@@ -1708,7 +1878,10 @@ static pixman_image_t *render_entry_raster(Bar *bar, const LaidEntry *le,
     cairo_surface_destroy(cs);
   }
 
-  if (le->e.is_tray)
+  if (le->e.is_tags)
+    paint_tags_entry(bar, &le->e, &le->g, y, bar->w_fg, bar->w_mask, bar->w_bg,
+                     buf_h);
+  else if (le->e.is_tray)
     paint_tray_entry(bar, &le->e, &le->g, y, bar->w_fg, bar->w_mask, bar->w_bg,
                      buf_h);
   else
@@ -2025,10 +2198,12 @@ static void draw_bar(Bar *bar) {
     }
     ModuleEntry me = scratch[i];
     me.text = text;
-    EntryGeom g = me.is_tray
-                      ? layout_tray_entry(bar, &me, x, left_max, buf_h)
-                      : layout_module(bar, me.module, me.tag, me.text, me.st, x,
-                                      buf_h, left_max);
+    EntryGeom g = me.is_tags
+                      ? layout_tags_entry(bar, &me, x, left_max, buf_h)
+                      : me.is_tray
+                          ? layout_tray_entry(bar, &me, x, left_max, buf_h)
+                          : layout_module(bar, me.module, me.tag, me.text, me.st, x,
+                                          buf_h, left_max);
     laid[laid_n].e = me;
     laid[laid_n].g = g;
     laid_n++;
@@ -2095,10 +2270,12 @@ static void draw_bar(Bar *bar) {
       }
       ModuleEntry me = center_ents[i];
       me.text = text;
-      EntryGeom g = me.is_tray
-                        ? layout_tray_entry(bar, &me, cx, center_max, buf_h)
-                        : layout_module(bar, me.module, me.tag, me.text, me.st,
-                                        cx, buf_h, center_max);
+      EntryGeom g = me.is_tags
+                        ? layout_tags_entry(bar, &me, cx, center_max, buf_h)
+                        : me.is_tray
+                            ? layout_tray_entry(bar, &me, cx, center_max, buf_h)
+                            : layout_module(bar, me.module, me.tag, me.text, me.st,
+                                            cx, buf_h, center_max);
       laid[laid_n].e = me;
       laid[laid_n].g = g;
       laid_n++;
@@ -2112,10 +2289,12 @@ static void draw_bar(Bar *bar) {
     if (cur_x >= right_edge)
       break;
     ModuleEntry me = right_ents[i];
-    EntryGeom g = me.is_tray
-                      ? layout_tray_entry(bar, &me, cur_x, right_edge, buf_h)
-                      : layout_module(bar, me.module, me.tag, me.text, me.st,
-                                      cur_x, buf_h, right_edge);
+    EntryGeom g = me.is_tags
+                      ? layout_tags_entry(bar, &me, cur_x, right_edge, buf_h)
+                      : me.is_tray
+                          ? layout_tray_entry(bar, &me, cur_x, right_edge, buf_h)
+                          : layout_module(bar, me.module, me.tag, me.text, me.st,
+                                          cur_x, buf_h, right_edge);
     laid[laid_n].e = me;
     laid[laid_n].g = g;
     laid_n++;
@@ -5269,6 +5448,9 @@ static void init_profile_styles(ProfileRuntime *rt, MangoConfigProfile *profile)
   if (!g_style_sheet.loaded)
     return;
 
+  rt->st_tags_box.radius = -1;
+  apply_css(&rt->st_tags_box, "tags", NULL);
+  apply_css_resolved(&rt->st_tags_box, style_resolve_module_only(&g_style_sheet, "workspaces", NULL));
   apply_css(&rt->st_tags[0], "tags", "active");
   apply_css(&rt->st_tags[1], "tags", "occupied");
   apply_css(&rt->st_tags[2], "tags", "urgent");
@@ -5473,8 +5655,9 @@ int main(int argc, char **argv) {
       rt->bar_h = (uint32_t)min_h;
     // Keep tag/layout buttons at least as wide as the bar is tall.
     for (int j = 0; j < 5; j++)
-      rt->st_tags[j].min_width =
-          (int)rt->bar_h + rt->st_tags[j].margin_l + rt->st_tags[j].margin_r;
+      if (rt->st_tags[j].min_width == 0)
+        rt->st_tags[j].min_width =
+            (int)rt->bar_h + rt->st_tags[j].margin_l + rt->st_tags[j].margin_r;
     rt->st_layout.min_width =
         (int)rt->bar_h + rt->st_layout.margin_l + rt->st_layout.margin_r;
   }
