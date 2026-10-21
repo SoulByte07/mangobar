@@ -230,7 +230,7 @@ static int resolve_color_value(const StyleSheet *ss, const char *val,
   const char *p = val;
   while (*p && isspace((unsigned char)*p))
     p++;
-  if (strncmp(p, "none", 4) == 0) {
+  if (strncmp(p, "none", 4) == 0 || strncmp(p, "transparent", 11) == 0) {
     snprintf(out, outsz, "#00000000");
     return 1;
   }

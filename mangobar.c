@@ -1726,14 +1726,16 @@ static void paint_tags_entry(Bar *bar, const ModuleEntry *e, const EntryGeom *g,
     uint32_t bx1 = cur + st->margin_l;
     uint32_t bx2 = cur + mw - st->margin_r;
 
-    // Draw active/individual tag background if set and not transparent
+    // Draw active/individual tag background inside the bubble
     if (bar_bg_cr && st->bg.alpha > 0) {
-      int rad = module_radius(st, buf_h);
+      double vpad = 4.0;
+      double py = (double)g_rt->bar_top + vpad;
+      double ph = (double)buf_h > 2.0 * vpad ? (double)buf_h - 2.0 * vpad : (double)buf_h;
+      int rad = module_radius(st, (uint32_t)ph);
       double r, g_c, b, a;
       pixman_color_to_doubles(&st->bg, &r, &g_c, &b, &a);
       cairo_set_source_rgba(bar_bg_cr, r, g_c, b, a);
-      cairo_rounded_rect(bar_bg_cr, bx1, g_rt->bar_top, (double)(bx2 - bx1),
-                         (double)buf_h, rad);
+      cairo_rounded_rect(bar_bg_cr, (double)bx1, py, (double)(bx2 - bx1), ph, rad);
       cairo_fill(bar_bg_cr);
     }
 
