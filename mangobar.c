@@ -197,6 +197,8 @@ static void cairo_rounded_rect(cairo_t *cr, double x, double y, double w,
 typedef struct {
   pixman_color_t fg, bg;
   pixman_color_t gradient_end;
+  pixman_color_t border_color;
+  bool border_color_set;
   bool bg_gradient;
   int gradient_dir; // 0=to bottom 1=to top 2=to left 3=to right
   int pad_l, pad_r;
@@ -1130,6 +1132,8 @@ typedef struct {
   EntryGeom g;
 } LaidEntry;
 
+static uint32_t calc_tags_entry_width(Bar *bar, const ModuleStyle *box);
+
 // Per-module max display width in pixels; 0 = unlimited.
 static int module_max_length(const char *module) {
   for (int i = 0; i < g_cfg.max_len_count; i++)
@@ -1222,9 +1226,10 @@ static int append_module_entries(Bar *bar, int id, ModuleEntry *ents, int max,
                                   .tag = -1};
     } else {
       if (n < max) {
+        uint32_t tw = calc_tags_entry_width(bar, &g_rt->st_tags_box);
         ents[n++] = (ModuleEntry){.text = "", .st = &g_rt->st_tags_box,
                                   .module = "tags", .tag = -1,
-                                  .is_tags = true};
+                                  .is_tags = true, .width = tw};
       }
     }
     break;
@@ -1482,8 +1487,38 @@ static void fit_text_width(const char *text, char *out, size_t outsz,
   out[0] = '\0';
 }
 
+static uint32_t calc_tags_entry_width(Bar *bar, const ModuleStyle *box) {
+  int count = 0;
+  uint32_t inner_w = 0;
+  for (int i = 0; i < bar->tag_count; i++) {
+    if (g_cfg.only_occupied && !(bar->ctags & (1 << i)) &&
+        !(bar->atags & (1 << i)) && !(g_cfg.pinned_tags & (1 << i)))
+      continue;
+    ModuleStyle *st;
+    if (bar->urg & (1 << i))
+      st = &g_rt->st_tags[2];
+    else if (bar->mtags & (1 << i))
+      st = &g_rt->st_tags[0];
+    else if (bar->ctags & (1 << i))
+      st = &g_rt->st_tags[1];
+    else
+      st = &g_rt->st_tags[3];
+    const char *text = g_cfg.tag_names[i];
+    int32_t mn = 0, mx = 0;
+    uint32_t tw = text_metrics(text, &mn, &mx);
+    uint32_t body = tw + st->pad_l + st->pad_r;
+    uint32_t mw = body + st->margin_l + st->margin_r;
+    if ((int)mw < st->min_width)
+      mw = (uint32_t)st->min_width;
+    inner_w += mw;
+    count++;
+  }
+  if (count == 0) return 0;
+  uint32_t body_w = inner_w + box->pad_l + box->pad_r;
+  return body_w + box->margin_l + box->margin_r;
+}
 static uint32_t module_entry_width(const ModuleEntry *e) {
-  if (e->is_tray)
+  if (e->is_tray || e->is_tags)
     return e->width;
   if (!e->text || !*e->text)
     return 0;
@@ -1643,6 +1678,18 @@ static void paint_tags_entry(Bar *bar, const ModuleEntry *e, const EntryGeom *g,
     cairo_fill(bar_bg_cr);
     if (pat)
       cairo_pattern_destroy(pat);
+  }
+
+  // Draw border stroke around outer bubble if configured
+  if (bar_bg_cr && box->border_color_set) {
+    double br, bg, bb, ba;
+    pixman_color_to_doubles(&box->border_color, &br, &bg, &bb, &ba);
+    cairo_set_source_rgba(bar_bg_cr, br, bg, bb, ba);
+    cairo_set_line_width(bar_bg_cr, 1.5);
+    cairo_rounded_rect(bar_bg_cr, (double)tag_x1 + 0.75, (double)g_rt->bar_top + 0.75,
+                       (double)tag_body_w - 1.5, (double)buf_h - 1.5,
+                       module_radius(box, buf_h));
+    cairo_stroke(bar_bg_cr);
   }
 
   // 2. Draw tag buttons inside the bubble
@@ -5336,6 +5383,10 @@ static void event_loop() {
 static void apply_css_resolved(ModuleStyle *ms, Style s) {
   if (s.color_set)
     hex_to_pixman(s.color, &ms->fg);
+  if (s.border_color_set) {
+    hex_to_pixman(s.border_color, &ms->border_color);
+    ms->border_color_set = true;
+  }
   if (s.background_set) {
     hex_to_pixman(s.background, &ms->bg);
     ms->bg_gradient = s.bg_gradient;
