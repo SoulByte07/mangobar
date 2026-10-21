@@ -518,6 +518,20 @@ static void parse_module_configs(cJSON *root) {
     m = cJSON_GetObjectItemCaseSensitive(root, "mango/layout");
   if (cJSON_IsObject(m)) {
     cfg_str(m, "format", parse_target->layout_format, sizeof(parse_target->layout_format));
+    cJSON *icons = cJSON_GetObjectItemCaseSensitive(m, "format-icons");
+    if (cJSON_IsObject(icons)) {
+      parse_target->layout_icon_count = 0;
+      cJSON *child;
+      cJSON_ArrayForEach(child, icons) {
+        if (child->string && cJSON_IsString(child) && parse_target->layout_icon_count < 16) {
+          snprintf(parse_target->layout_names[parse_target->layout_icon_count],
+                   sizeof(parse_target->layout_names[0]), "%s", child->string);
+          snprintf(parse_target->layout_icons[parse_target->layout_icon_count],
+                   sizeof(parse_target->layout_icons[0]), "%s", child->valuestring);
+          parse_target->layout_icon_count++;
+        }
+      }
+    }
     cfg_alt(m, "layout");
     set_module_actions(m, "layout");
   }

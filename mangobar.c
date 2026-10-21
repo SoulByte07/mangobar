@@ -1235,7 +1235,37 @@ static int append_module_entries(Bar *bar, int id, ModuleEntry *ents, int max,
     break;
   case M_LAYOUT:
     dst = texts[(*text_n)++];
-    format_value(g_cfg.layout_format, bar->layout, "", dst, 256);
+    {
+      const char *sym = bar->layout;
+      const char *icon = NULL;
+      for (int li = 0; li < g_cfg.layout_icon_count; li++) {
+        if (strcasecmp(g_cfg.layout_names[li], sym) == 0) {
+          icon = g_cfg.layout_icons[li];
+          break;
+        }
+      }
+      if (!icon) {
+        if (strcasecmp(sym, "tile") == 0 || strcasecmp(sym, "T") == 0 || strcasecmp(sym, "master") == 0)
+          icon = "󰕰";
+        else if (strcasecmp(sym, "scroller") == 0 || strcasecmp(sym, "S") == 0 || strcasecmp(sym, "scroll") == 0)
+          icon = "󱕒";
+        else
+          icon = sym;
+      }
+      if (strstr(g_cfg.layout_format, "{icon}")) {
+        char tmp_fmt[64];
+        snprintf(tmp_fmt, sizeof(tmp_fmt), "%s", g_cfg.layout_format);
+        char *p = strstr(tmp_fmt, "{icon}");
+        if (p) {
+          char after[64];
+          snprintf(after, sizeof(after), "%s", p + 6);
+          snprintf(p, sizeof(tmp_fmt) - (size_t)(p - tmp_fmt), "%s%s", icon, after);
+        }
+        format_value(tmp_fmt, sym, "", dst, 256);
+      } else {
+        format_value(g_cfg.layout_format, icon, "", dst, 256);
+      }
+    }
     ents[n++] = (ModuleEntry){.text = dst, .st = &g_rt->st_layout,
                               .module = "layout", .tag = -1};
     break;

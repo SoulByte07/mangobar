@@ -110,6 +110,9 @@ typedef struct {
   char volume_fmt[64];
   char volume_fmt_muted[64];
   char layout_format[64];
+  char layout_icons[16][16];
+  char layout_names[16][32];
+  int layout_icon_count;
   char title_format[128];
   char cpu_format[64];
   char mem_format[64];
