@@ -56,3 +56,10 @@ dkms.conf
 
 # Nix build output symlink
 result
+
+# Build artifacts and generated protocol files
+/mangobar
+/defaults.h
+*-protocol.c
+*-protocol.h
+build/
