@@ -20,6 +20,7 @@ typedef struct {
     int padding_left;
     int padding_right;
     int margin_top;
+    int margin_bottom;
     int margin_left;
     int margin_right;
     int radius; // corner radius; -1 = pill, >=0 explicit (0 = square)
@@ -30,6 +31,7 @@ typedef struct {
     bool padding_left_set;
     bool padding_right_set;
     bool margin_top_set;
+    bool margin_bottom_set;
     bool margin_left_set;
     bool margin_right_set;
     bool radius_set;

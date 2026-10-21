@@ -538,11 +538,16 @@ static void apply_decl(StyleSheet *ss, Style *st, const char *prop,
   } else if (strcmp(prop, "margin") == 0) {
     int a, b;
     parse_int_pair(val, &a, &b);
-    st->margin_top = a;
-    st->margin_top_set = true;
+    st->margin_top = st->margin_bottom = a;
+    st->margin_top_set = st->margin_bottom_set = true;
     st->margin_left = st->margin_right = b;
     st->margin_left_set = st->margin_right_set = true;
   } else if (strcmp(prop, "margin-top") == 0) {
+    st->margin_top = parse_int(val);
+    st->margin_top_set = true;
+  } else if (strcmp(prop, "margin-bottom") == 0) {
+    st->margin_bottom = parse_int(val);
+    st->margin_bottom_set = true;
     st->margin_top = parse_int(val);
     st->margin_top_set = true;
   } else if (strcmp(prop, "margin-left") == 0) {
@@ -902,6 +907,8 @@ static void apply_rule(Style *dst, const StyleRule *r) {
     dst->padding_right = s->padding_right;
   if (s->margin_top_set)
     dst->margin_top = s->margin_top;
+  if (s->margin_bottom_set)
+    dst->margin_bottom = s->margin_bottom;
   if (s->margin_left_set)
     dst->margin_left = s->margin_left;
   if (s->margin_right_set)
@@ -916,6 +923,7 @@ static void apply_rule(Style *dst, const StyleRule *r) {
   dst->padding_left_set |= s->padding_left_set;
   dst->padding_right_set |= s->padding_right_set;
   dst->margin_top_set |= s->margin_top_set;
+  dst->margin_bottom_set |= s->margin_bottom_set;
   dst->margin_left_set |= s->margin_left_set;
   dst->margin_right_set |= s->margin_right_set;
   dst->radius_set |= s->radius_set;

@@ -228,6 +228,7 @@ typedef struct {
   ModuleStyle st_custom[MANGOBAR_MAX_CUSTOM];
   ModuleStyle st_overview, st_separator, st_tray, st_bar, st_bar_sel;
   int bar_top;
+  int bar_bottom;
   uint32_t bar_h;
   uint32_t bar_left, bar_right;
   char brightness_dev[64];
@@ -2624,20 +2625,19 @@ static void bar_create_surface(Bar *bar) {
   // name arrived; keep that factor instead of starting over from 1.
   bar->scale = bar->wl_scale * bscale;
   bar->tag_count = cfg->tag_count;
-  bar->height = (rt->bar_h + rt->bar_top) * (uint32_t)bar->scale;
+  uint32_t total_h = (uint32_t)(rt->bar_h + rt->bar_top + rt->bar_bottom);
+  bar->height = total_h * (uint32_t)bar->scale;
   bar->wl_surface = wl_compositor_create_surface(compositor);
   bar->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
       layer_shell, bar->wl_surface, bar->wl_output, cfg->layer, "mangobar");
   zwlr_layer_surface_v1_add_listener(bar->layer_surface,
                                      &layer_surface_listener, bar);
-  zwlr_layer_surface_v1_set_size(bar->layer_surface, 0,
-                                 rt->bar_h + rt->bar_top);
+  zwlr_layer_surface_v1_set_size(bar->layer_surface, 0, total_h);
   zwlr_layer_surface_v1_set_anchor(bar->layer_surface,
                                    ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
                                        ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
                                        ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
-  zwlr_layer_surface_v1_set_exclusive_zone(bar->layer_surface,
-                                           rt->bar_h + rt->bar_top);
+  zwlr_layer_surface_v1_set_exclusive_zone(bar->layer_surface, total_h);
   wl_surface_commit(bar->wl_surface);
   bar->active = true;
 }
@@ -5628,6 +5628,7 @@ static void init_profile_styles(ProfileRuntime *rt, MangoConfigProfile *profile)
   // Top margin comes from the #bar CSS margin.
   Style bar_s = style_resolve(&g_style_sheet, "bar", "");
   rt->bar_top = bar_s.margin_top_set ? bar_s.margin_top : 0;
+  rt->bar_bottom = bar_s.margin_bottom_set ? bar_s.margin_bottom : 0;
   rt->bar_left = bar_s.margin_left_set ? (uint32_t)bar_s.margin_left : 0;
   rt->bar_right = bar_s.margin_right_set ? (uint32_t)bar_s.margin_right : 0;
   rt->bar_h = (uint32_t)profile->config.bar_height;
