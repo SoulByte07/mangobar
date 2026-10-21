@@ -483,6 +483,16 @@ static void parse_module_configs(cJSON *root) {
       }
     }
     // Custom tag labels (index 0 = tag 1)
+    cJSON *fi = cJSON_GetObjectItemCaseSensitive(m, "format-icons");
+    if (cJSON_IsObject(fi)) {
+      parse_target->has_tag_icons = true;
+      cfg_str(fi, "active", parse_target->tag_icon_active, sizeof(parse_target->tag_icon_active));
+      cfg_str(fi, "empty", parse_target->tag_icon_empty, sizeof(parse_target->tag_icon_empty));
+      cfg_str(fi, "occupied", parse_target->tag_icon_occupied, sizeof(parse_target->tag_icon_occupied));
+      cfg_str(fi, "urgent", parse_target->tag_icon_urgent, sizeof(parse_target->tag_icon_urgent));
+      cfg_str(fi, "default", parse_target->tag_icon_default, sizeof(parse_target->tag_icon_default));
+    }
+
     cJSON *tn = cJSON_GetObjectItemCaseSensitive(m, "tag-names");
     if (cJSON_IsArray(tn)) {
       int idx = 0;

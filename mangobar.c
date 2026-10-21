@@ -1517,6 +1517,23 @@ static void fit_text_width(const char *text, char *out, size_t outsz,
   out[0] = '\0';
 }
 
+static const char *resolve_tag_text(const Bar *bar, int i) {
+  if (!g_cfg.has_tag_icons)
+    return g_cfg.tag_names[i];
+  if (bar->urg & (1 << i)) {
+    if (g_cfg.tag_icon_urgent[0]) return g_cfg.tag_icon_urgent;
+    if (g_cfg.tag_icon_default[0]) return g_cfg.tag_icon_default;
+  } else if (bar->mtags & (1 << i)) {
+    if (g_cfg.tag_icon_active[0]) return g_cfg.tag_icon_active;
+  } else if (bar->ctags & (1 << i)) {
+    if (g_cfg.tag_icon_occupied[0]) return g_cfg.tag_icon_occupied;
+    if (g_cfg.tag_icon_default[0]) return g_cfg.tag_icon_default;
+  } else {
+    if (g_cfg.tag_icon_empty[0]) return g_cfg.tag_icon_empty;
+    if (g_cfg.tag_icon_default[0]) return g_cfg.tag_icon_default;
+  }
+  return g_cfg.tag_names[i];
+}
 static uint32_t calc_tags_entry_width(Bar *bar, const ModuleStyle *box) {
   int count = 0;
   uint32_t inner_w = 0;
@@ -1533,7 +1550,7 @@ static uint32_t calc_tags_entry_width(Bar *bar, const ModuleStyle *box) {
       st = &g_rt->st_tags[1];
     else
       st = &g_rt->st_tags[3];
-    const char *text = g_cfg.tag_names[i];
+    const char *text = resolve_tag_text(bar, i);
     int32_t mn = 0, mx = 0;
     uint32_t tw = text_metrics(text, &mn, &mx);
     uint32_t body = tw + st->pad_l + st->pad_r;
@@ -1618,7 +1635,7 @@ static EntryGeom layout_tags_entry(Bar *bar, const ModuleEntry *e, uint32_t x,
     else
       st = &g_rt->st_tags[3];
 
-    const char *text = g_cfg.tag_names[i];
+    const char *text = resolve_tag_text(bar, i);
     int32_t mn = 0, mx = 0;
     uint32_t tw = text_metrics(text, &mn, &mx);
     uint32_t body = tw + st->pad_l + st->pad_r;
@@ -1745,7 +1762,7 @@ static void paint_tags_entry(Bar *bar, const ModuleEntry *e, const EntryGeom *g,
       st = &g_rt->st_tags_hover_scratch;
     }
 
-    const char *text = g_cfg.tag_names[i];
+    const char *text = resolve_tag_text(bar, i);
     int32_t mn = 0, mx = 0;
     uint32_t tw = text_metrics(text, &mn, &mx);
     uint32_t body = tw + st->pad_l + st->pad_r;

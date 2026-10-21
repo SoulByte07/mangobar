@@ -113,6 +113,12 @@ typedef struct {
   char layout_icons[16][16];
   char layout_names[16][32];
   int layout_icon_count;
+  char tag_icon_active[16];
+  char tag_icon_empty[16];
+  char tag_icon_occupied[16];
+  char tag_icon_urgent[16];
+  char tag_icon_default[16];
+  bool has_tag_icons;
   char title_format[128];
   char cpu_format[64];
   char mem_format[64];
