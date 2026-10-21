@@ -85,6 +85,8 @@ typedef struct {
 
 typedef struct {
   int bar_height;
+  int bar_width;
+  int bar_width_pct;
   int buffer_scale;
   int radius_default;
   int layer;

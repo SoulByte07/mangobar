@@ -2483,7 +2483,45 @@ static void draw_bar(Bar *bar) {
 
   for (int r = 0; r < dmg.n; r++) {
     clear_box(bar->cache, dmg.x0[r], dmg.y0[r], dmg.x1[r], dmg.y1[r]);
-    if (mid_valid) {
+    ModuleStyle *st_bar = bar->sel ? &g_rt->st_bar_sel : &g_rt->st_bar;
+    bool outer_capsule = (st_bar->bg.alpha > 0 || st_bar->border_color_set);
+    if (outer_capsule) {
+      cairo_surface_t *cs = cairo_image_surface_create_for_data(
+          (unsigned char *)pixman_image_get_data(bar->cache),
+          CAIRO_FORMAT_ARGB32, bar->width, bar->height, bar->stride);
+      if (cs && cairo_surface_status(cs) == CAIRO_STATUS_SUCCESS) {
+        cairo_t *cr = cairo_create(cs);
+        cairo_rectangle(cr, dmg.x0[r], dmg.y0[r],
+                        dmg.x1[r] - dmg.x0[r], dmg.y1[r] - dmg.y0[r]);
+        cairo_clip(cr);
+        cairo_scale(cr, bar->scale, bar->scale);
+        cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
+        double bx = (double)g_rt->bar_left;
+        double by = (double)top;
+        double bw = (double)(logical_w > (g_rt->bar_left + g_rt->bar_right)
+                                 ? logical_w - g_rt->bar_left - g_rt->bar_right
+                                 : logical_w);
+        double bh = (double)buf_h;
+        int brad = st_bar->radius >= 0 ? st_bar->radius : (int)bh / 2;
+        if (st_bar->bg.alpha > 0) {
+          double red, grn, blu, alp;
+          pixman_color_to_doubles(&st_bar->bg, &red, &grn, &blu, &alp);
+          cairo_set_source_rgba(cr, red, grn, blu, alp);
+          cairo_rounded_rect(cr, bx, by, bw, bh, (double)brad);
+          cairo_fill(cr);
+        }
+        if (st_bar->border_color_set) {
+          double red, grn, blu, alp;
+          pixman_color_to_doubles(&st_bar->border_color, &red, &grn, &blu, &alp);
+          cairo_set_source_rgba(cr, red, grn, blu, alp);
+          cairo_set_line_width(cr, 1.5);
+          cairo_rounded_rect(cr, bx + 0.75, by + 0.75, bw - 1.5, bh - 1.5, (double)brad);
+          cairo_stroke(cr);
+        }
+        cairo_destroy(cr);
+        cairo_surface_destroy(cs);
+      }
+    } else if (mid_valid) {
       int x0 = mid_x0 > dmg.x0[r] ? mid_x0 : dmg.x0[r];
       int y0 = mid_y0 > dmg.y0[r] ? mid_y0 : dmg.y0[r];
       int x1 = mid_x1 < dmg.x1[r] ? mid_x1 : dmg.x1[r];
@@ -2632,11 +2670,26 @@ static void bar_create_surface(Bar *bar) {
       layer_shell, bar->wl_surface, bar->wl_output, cfg->layer, "mangobar");
   zwlr_layer_surface_v1_add_listener(bar->layer_surface,
                                      &layer_surface_listener, bar);
-  zwlr_layer_surface_v1_set_size(bar->layer_surface, 0, total_h);
-  zwlr_layer_surface_v1_set_anchor(bar->layer_surface,
-                                   ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
-                                       ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
-                                       ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+  uint32_t bar_w = 0;
+  if (cfg->bar_width > 0) {
+    bar_w = (uint32_t)cfg->bar_width;
+  } else if (cfg->bar_width_pct > 0 && bar->out_w > 0) {
+    bar_w = (uint32_t)(bar->out_w * cfg->bar_width_pct / 100);
+  }
+
+  if (bar_w > 0) {
+    zwlr_layer_surface_v1_set_size(bar->layer_surface, bar_w, total_h);
+    zwlr_layer_surface_v1_set_anchor(bar->layer_surface,
+                                     ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP);
+    zwlr_layer_surface_v1_set_margin(bar->layer_surface, rt->bar_top, 0,
+                                     rt->bar_bottom, 0);
+  } else {
+    zwlr_layer_surface_v1_set_size(bar->layer_surface, 0, total_h);
+    zwlr_layer_surface_v1_set_anchor(bar->layer_surface,
+                                     ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+                                         ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT |
+                                         ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+  }
   zwlr_layer_surface_v1_set_exclusive_zone(bar->layer_surface, total_h);
   wl_surface_commit(bar->wl_surface);
   bar->active = true;
@@ -2685,6 +2738,15 @@ static void output_logical_size(void *data, struct zxdg_output_v1 *xdg_output,
   Bar *bar = data;
   bar->out_w = width;
   bar->out_h = height;
+  if (bar->layer_surface && bar->profile && bar->rt) {
+    const MangoConfig *cfg = &bar->profile->config;
+    if (cfg->bar_width_pct > 0 && width > 0) {
+      uint32_t bar_w = (uint32_t)(width * cfg->bar_width_pct / 100);
+      uint32_t total_h = (uint32_t)(bar->rt->bar_h + bar->rt->bar_top + bar->rt->bar_bottom);
+      zwlr_layer_surface_v1_set_size(bar->layer_surface, bar_w, total_h);
+      wl_surface_commit(bar->wl_surface);
+    }
+  }
 }
 
 static void output_done(void *data, struct zxdg_output_v1 *xdg_output) {

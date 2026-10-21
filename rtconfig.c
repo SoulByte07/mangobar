@@ -900,6 +900,18 @@ static int parse_object_into(cJSON *root, MangoConfig *cfg) {
   if ((v = cJSON_GetObjectItemCaseSensitive(root, "height")) &&
       cJSON_IsNumber(v))
     cfg->bar_height = v->valueint;
+  if ((v = cJSON_GetObjectItemCaseSensitive(root, "width"))) {
+    if (cJSON_IsNumber(v)) {
+      cfg->bar_width = v->valueint;
+    } else if (cJSON_IsString(v)) {
+      size_t slen = strlen(v->valuestring);
+      if (slen > 0 && v->valuestring[slen - 1] == '%') {
+        cfg->bar_width_pct = atoi(v->valuestring);
+      } else {
+        cfg->bar_width = atoi(v->valuestring);
+      }
+    }
+  }
   if ((v = cJSON_GetObjectItemCaseSensitive(root, "buffer-scale")) &&
       cJSON_IsNumber(v) && v->valueint > 0)
     cfg->buffer_scale = v->valueint;
