@@ -217,6 +217,7 @@ static void apply_css_resolved(ModuleStyle *ms, Style s);
 typedef struct {
   ModuleStyle st_tags[5];
   ModuleStyle st_tags_box;
+  ModuleStyle st_right_box;
   ModuleStyle st_tags_hover_scratch;
   Style st_tag_hover_css;
   ModuleStyle st_layout, st_title, st_clock, st_clock_date, st_cpu, st_mem;
@@ -567,6 +568,9 @@ typedef struct Bar {
   bool mid_painted;
   int mid_x0, mid_x1;
   uint64_t mid_key;
+  bool right_painted;
+  int right_x0, right_x1;
+  uint64_t right_key;
   DirtyList dirty;
   struct wl_buffer *buf[MANGOBAR_BUF_POOL];
   void *buf_data[MANGOBAR_BUF_POOL];
@@ -2381,7 +2385,16 @@ static void draw_bar(Bar *bar) {
   }
 
   // Draw right group
+  uint32_t right_group_x0 = 0, right_group_x1 = 0;
+  bool right_group_has_bounds = false;
+  ModuleStyle *st_right = &g_rt->st_right_box;
   uint32_t cur_x = right_start;
+  if (st_right->margin_l > 0)
+    cur_x += (uint32_t)st_right->margin_l;
+  uint32_t box_start_x = cur_x;
+  if (st_right->pad_l > 0)
+    cur_x += (uint32_t)st_right->pad_l;
+
   for (int i = 0; i < right_n && laid_n < BAR_MAX_SLOTS; i++) {
     if (cur_x >= right_edge)
       break;
@@ -2395,6 +2408,11 @@ static void draw_bar(Bar *bar) {
     laid[laid_n].e = me;
     laid[laid_n].g = g;
     laid_n++;
+    if (!right_group_has_bounds) {
+      right_group_x0 = box_start_x;
+      right_group_has_bounds = true;
+    }
+    right_group_x1 = g.end + (uint32_t)st_right->pad_r;
     cur_x = g.end;
   }
 
@@ -2408,6 +2426,28 @@ static void draw_bar(Bar *bar) {
       dirty_add(&dmg, bar->mid_x0, mid_y0, bar->mid_x1, mid_y1);
     if (mid_valid)
       dirty_add(&dmg, mid_x0, mid_y0, mid_x1, mid_y1);
+  }
+
+  bool right_capsule = right_group_has_bounds && (st_right->bg.alpha > 0 || st_right->border_color_set);
+  bool right_valid = right_capsule;
+  int right_box_x0 = (int)(right_group_x0 * (uint32_t)scale);
+  int right_box_x1 = (int)(right_group_x1 * (uint32_t)scale);
+  uint64_t right_key = right_valid
+                           ? hash_mix(hash_mix(((uint64_t)st_right->bg.red << 48) |
+                                                   ((uint64_t)st_right->bg.green << 32) |
+                                                   ((uint64_t)st_right->bg.blue << 16) |
+                                                   st_right->bg.alpha,
+                                               ((uint64_t)(uint32_t)right_box_x0 << 32) |
+                                                   (uint32_t)right_box_x1),
+                                      (uint64_t)scale)
+                           : 0;
+
+  if (right_valid != bar->right_painted || right_key != bar->right_key ||
+      (right_valid && (right_box_x0 != bar->right_x0 || right_box_x1 != bar->right_x1))) {
+    if (bar->right_painted)
+      dirty_add(&dmg, bar->right_x0, mid_y0, bar->right_x1, mid_y1);
+    if (right_valid)
+      dirty_add(&dmg, right_box_x0, mid_y0, right_box_x1, mid_y1);
   }
 
   BarSlot next[BAR_MAX_SLOTS];
@@ -2479,13 +2519,17 @@ static void draw_bar(Bar *bar) {
   bar->mid_x0 = mid_x0;
   bar->mid_x1 = mid_x1;
   bar->mid_key = mid_key;
+  bar->right_painted = right_valid;
+  bar->right_x0 = right_box_x0;
+  bar->right_x1 = right_box_x1;
+  bar->right_key = right_key;
   bar->paint_all = false;
 
   for (int r = 0; r < dmg.n; r++) {
     clear_box(bar->cache, dmg.x0[r], dmg.y0[r], dmg.x1[r], dmg.y1[r]);
     ModuleStyle *st_bar = bar->sel ? &g_rt->st_bar_sel : &g_rt->st_bar;
     bool outer_capsule = (st_bar->bg.alpha > 0 || st_bar->border_color_set);
-    if (outer_capsule) {
+    if (outer_capsule || right_capsule) {
       cairo_surface_t *cs = cairo_image_surface_create_for_data(
           (unsigned char *)pixman_image_get_data(bar->cache),
           CAIRO_FORMAT_ARGB32, bar->width, bar->height, bar->stride);
@@ -2496,27 +2540,51 @@ static void draw_bar(Bar *bar) {
         cairo_clip(cr);
         cairo_scale(cr, bar->scale, bar->scale);
         cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
-        double bx = (double)g_rt->bar_left;
-        double by = (double)top;
-        double bw = (double)(logical_w > (g_rt->bar_left + g_rt->bar_right)
-                                 ? logical_w - g_rt->bar_left - g_rt->bar_right
-                                 : logical_w);
-        double bh = (double)buf_h;
-        int brad = st_bar->radius >= 0 ? st_bar->radius : (int)bh / 2;
-        if (st_bar->bg.alpha > 0) {
-          double red, grn, blu, alp;
-          pixman_color_to_doubles(&st_bar->bg, &red, &grn, &blu, &alp);
-          cairo_set_source_rgba(cr, red, grn, blu, alp);
-          cairo_rounded_rect(cr, bx, by, bw, bh, (double)brad);
-          cairo_fill(cr);
+        if (outer_capsule) {
+          double bx = (double)g_rt->bar_left;
+          double by = (double)top;
+          double bw = (double)(logical_w > (g_rt->bar_left + g_rt->bar_right)
+                                   ? logical_w - g_rt->bar_left - g_rt->bar_right
+                                   : logical_w);
+          double bh = (double)buf_h;
+          int brad = st_bar->radius >= 0 ? st_bar->radius : (int)bh / 2;
+          if (st_bar->bg.alpha > 0) {
+            double red, grn, blu, alp;
+            pixman_color_to_doubles(&st_bar->bg, &red, &grn, &blu, &alp);
+            cairo_set_source_rgba(cr, red, grn, blu, alp);
+            cairo_rounded_rect(cr, bx, by, bw, bh, (double)brad);
+            cairo_fill(cr);
+          }
+          if (st_bar->border_color_set) {
+            double red, grn, blu, alp;
+            pixman_color_to_doubles(&st_bar->border_color, &red, &grn, &blu, &alp);
+            cairo_set_source_rgba(cr, red, grn, blu, alp);
+            cairo_set_line_width(cr, 1.5);
+            cairo_rounded_rect(cr, bx + 0.75, by + 0.75, bw - 1.5, bh - 1.5, (double)brad);
+            cairo_stroke(cr);
+          }
         }
-        if (st_bar->border_color_set) {
-          double red, grn, blu, alp;
-          pixman_color_to_doubles(&st_bar->border_color, &red, &grn, &blu, &alp);
-          cairo_set_source_rgba(cr, red, grn, blu, alp);
-          cairo_set_line_width(cr, 1.5);
-          cairo_rounded_rect(cr, bx + 0.75, by + 0.75, bw - 1.5, bh - 1.5, (double)brad);
-          cairo_stroke(cr);
+        if (right_capsule) {
+          double rx = (double)right_group_x0;
+          double ry = (double)top;
+          double rw = (double)(right_group_x1 > right_group_x0 ? right_group_x1 - right_group_x0 : 0);
+          double rh = (double)buf_h;
+          int rrad = st_right->radius >= 0 ? st_right->radius : (int)rh / 2;
+          if (st_right->bg.alpha > 0) {
+            double red, grn, blu, alp;
+            pixman_color_to_doubles(&st_right->bg, &red, &grn, &blu, &alp);
+            cairo_set_source_rgba(cr, red, grn, blu, alp);
+            cairo_rounded_rect(cr, rx, ry, rw, rh, (double)rrad);
+            cairo_fill(cr);
+          }
+          if (st_right->border_color_set) {
+            double red, grn, blu, alp;
+            pixman_color_to_doubles(&st_right->border_color, &red, &grn, &blu, &alp);
+            cairo_set_source_rgba(cr, red, grn, blu, alp);
+            cairo_set_line_width(cr, 1.5);
+            cairo_rounded_rect(cr, rx + 0.75, ry + 0.75, rw - 1.5, rh - 1.5, (double)rrad);
+            cairo_stroke(cr);
+          }
         }
         cairo_destroy(cr);
         cairo_surface_destroy(cs);
@@ -5613,6 +5681,9 @@ static void init_profile_styles(ProfileRuntime *rt, MangoConfigProfile *profile)
   rt->st_tags_box.radius = -1;
   apply_css(&rt->st_tags_box, "tags", NULL);
   apply_css_resolved(&rt->st_tags_box, style_resolve_module_only(&g_style_sheet, "workspaces", NULL));
+  rt->st_right_box.radius = -1;
+  apply_css(&rt->st_right_box, "modules-right", NULL);
+  apply_css_resolved(&rt->st_right_box, style_resolve_module_only(&g_style_sheet, "modules-right", NULL));
   apply_css(&rt->st_tags[0], "tags", "active");
   apply_css(&rt->st_tags[1], "tags", "occupied");
   apply_css(&rt->st_tags[2], "tags", "urgent");
