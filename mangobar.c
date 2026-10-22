@@ -297,6 +297,25 @@ static void cairo_capsule_tapered_stroke(cairo_t *cr, double x, double y,
   cairo_fill(cr);
 }
 
+// Draw a soft ambient Gaussian-like drop shadow beneath the floating capsule
+static void cairo_capsule_drop_shadow(cairo_t *cr, double x, double y, double w, double h, double r) {
+  // 6 concentric expansion passes with decaying alpha to simulate smooth Gaussian blur
+  const int passes = 6;
+  const double max_spread = 6.0;
+  const double y_offset = 2.5;
+
+  for (int p = passes; p >= 1; p--) {
+    double frac = (double)p / (double)passes;
+    double spread = frac * max_spread;
+    // Ambient drop shadow: deeper near capsule edge, smooth falloff outward
+    double alpha = 0.045 * (1.0 - (frac * 0.75));
+    cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, alpha);
+    cairo_rounded_rect(cr, x - spread * 0.4, y + y_offset * frac,
+                       w + spread * 0.8, h + spread * 0.6, r + spread * 0.3);
+    cairo_fill(cr);
+  }
+}
+
 // ---------- Module style ----------
 typedef struct {
   pixman_color_t fg, bg;
@@ -2654,6 +2673,7 @@ static void draw_bar(Bar *bar) {
                                    : logical_w);
           double bh = (double)buf_h;
           int brad = st_bar->radius >= 0 ? st_bar->radius : (int)bh / 2;
+          cairo_capsule_drop_shadow(cr, bx, by, bw, bh, (double)brad);
           if (st_bar->bg.alpha > 0) {
             double red, grn, blu, alp;
             pixman_color_to_doubles(&st_bar->bg, &red, &grn, &blu, &alp);
