@@ -193,6 +193,110 @@ static void cairo_rounded_rect(cairo_t *cr, double x, double y, double w,
   cairo_close_path(cr);
 }
 
+// Draw a capsule border stroke where the curved "C" endcaps are tapered:
+// thin on top and bottom, smoothly bulging to thick at the horizontal middle apex.
+static void cairo_capsule_tapered_stroke(cairo_t *cr, double x, double y,
+                                         double w, double h, double r,
+                                         double t_thin, double t_thick) {
+  if (r > h / 2.0)
+    r = h / 2.0;
+  if (r > w / 2.0)
+    r = w / 2.0;
+  if (r < 1.0) {
+    cairo_set_line_width(cr, t_thin);
+    cairo_rectangle(cr, x, y, w, h);
+    cairo_stroke(cr);
+    return;
+  }
+
+  // 1. Top and bottom horizontal lines (thin stroke)
+  if (w > 2.0 * r) {
+    cairo_save(cr);
+    cairo_set_line_width(cr, t_thin);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_BUTT);
+    // Top line
+    cairo_move_to(cr, x + r, y + t_thin / 2.0);
+    cairo_line_to(cr, x + w - r, y + t_thin / 2.0);
+    // Bottom line
+    cairo_move_to(cr, x + r, y + h - t_thin / 2.0);
+    cairo_line_to(cr, x + w - r, y + h - t_thin / 2.0);
+    cairo_stroke(cr);
+    cairo_restore(cr);
+  }
+
+  // 2. Right "C" Endcap (from angle -PI/2 to +PI/2)
+  // Drawn as a closed crescent ribbon: outer arc -> inner tapered arc
+  double r_cx = x + w - r;
+  double r_cy = y + h / 2.0;
+  int steps = 24;
+  cairo_new_path(cr);
+  // Outer contour: moves from top to bottom
+  for (int i = 0; i <= steps; i++) {
+    double phi = -M_PI_2 + (M_PI * (double)i / (double)steps);
+    // Radial thickness offset: t_thin at ends (phi = +/- PI/2), t_thick at middle (phi = 0)
+    double cos_p = cos(phi);
+    double weight = cos_p * cos_p; // 1 at center, 0 at ends
+    double t = t_thin + (t_thick - t_thin) * weight;
+    double rad_out = r + (t - t_thin) * 0.4;
+    double px = r_cx + rad_out * cos(phi);
+    double py = r_cy + rad_out * sin(phi);
+    if (i == 0)
+      cairo_move_to(cr, px, py);
+    else
+      cairo_line_to(cr, px, py);
+  }
+  // Inner contour: returns from bottom to top
+  for (int i = steps; i >= 0; i--) {
+    double phi = -M_PI_2 + (M_PI * (double)i / (double)steps);
+    double cos_p = cos(phi);
+    double weight = cos_p * cos_p;
+    double t = t_thin + (t_thick - t_thin) * weight;
+    double rad_out = r + (t - t_thin) * 0.4;
+    double rad_in = rad_out - t;
+    if (rad_in < 0.0) rad_in = 0.0;
+    double px = r_cx + rad_in * cos(phi);
+    double py = r_cy + rad_in * sin(phi);
+    cairo_line_to(cr, px, py);
+  }
+  cairo_close_path(cr);
+  cairo_fill(cr);
+
+  // 3. Left "C" Endcap (from angle +PI/2 to +3*PI/2)
+  // Drawn as a closed crescent ribbon: outer arc -> inner tapered arc
+  double l_cx = x + r;
+  double l_cy = y + h / 2.0;
+  cairo_new_path(cr);
+  // Outer contour: moves from bottom to top
+  for (int i = 0; i <= steps; i++) {
+    double phi = M_PI_2 + (M_PI * (double)i / (double)steps);
+    double cos_p = cos(phi);
+    double weight = cos_p * cos_p; // 1 at center (phi = PI), 0 at ends
+    double t = t_thin + (t_thick - t_thin) * weight;
+    double rad_out = r + (t - t_thin) * 0.4;
+    double px = l_cx + rad_out * cos(phi);
+    double py = l_cy + rad_out * sin(phi);
+    if (i == 0)
+      cairo_move_to(cr, px, py);
+    else
+      cairo_line_to(cr, px, py);
+  }
+  // Inner contour: returns from top to bottom
+  for (int i = steps; i >= 0; i--) {
+    double phi = M_PI_2 + (M_PI * (double)i / (double)steps);
+    double cos_p = cos(phi);
+    double weight = cos_p * cos_p;
+    double t = t_thin + (t_thick - t_thin) * weight;
+    double rad_out = r + (t - t_thin) * 0.4;
+    double rad_in = rad_out - t;
+    if (rad_in < 0.0) rad_in = 0.0;
+    double px = l_cx + rad_in * cos(phi);
+    double py = l_cy + rad_in * sin(phi);
+    cairo_line_to(cr, px, py);
+  }
+  cairo_close_path(cr);
+  cairo_fill(cr);
+}
+
 // ---------- Module style ----------
 typedef struct {
   pixman_color_t fg, bg;
@@ -1737,11 +1841,9 @@ static void paint_tags_entry(Bar *bar, const ModuleEntry *e, const EntryGeom *g,
     double br, bg, bb, ba;
     pixman_color_to_doubles(&box->border_color, &br, &bg, &bb, &ba);
     cairo_set_source_rgba(bar_bg_cr, br, bg, bb, ba);
-    cairo_set_line_width(bar_bg_cr, 1.5);
-    cairo_rounded_rect(bar_bg_cr, (double)tag_x1 + 0.75, (double)g_rt->bar_top + 0.75,
-                       (double)tag_body_w - 1.5, (double)buf_h - 1.5,
-                       module_radius(box, buf_h));
-    cairo_stroke(bar_bg_cr);
+    cairo_capsule_tapered_stroke(bar_bg_cr, (double)tag_x1, (double)g_rt->bar_top,
+                                 (double)tag_body_w, (double)buf_h,
+                                 module_radius(box, buf_h), 1.0, 2.8);
   }
 
   // 2. Draw tag buttons inside the bubble
@@ -2559,9 +2661,7 @@ static void draw_bar(Bar *bar) {
             double red, grn, blu, alp;
             pixman_color_to_doubles(&st_bar->border_color, &red, &grn, &blu, &alp);
             cairo_set_source_rgba(cr, red, grn, blu, alp);
-            cairo_set_line_width(cr, 1.5);
-            cairo_rounded_rect(cr, bx + 0.75, by + 0.75, bw - 1.5, bh - 1.5, (double)brad);
-            cairo_stroke(cr);
+            cairo_capsule_tapered_stroke(cr, bx, by, bw, bh, (double)brad, 1.0, 2.8);
           }
         }
         if (right_capsule) {
@@ -2581,9 +2681,7 @@ static void draw_bar(Bar *bar) {
             double red, grn, blu, alp;
             pixman_color_to_doubles(&st_right->border_color, &red, &grn, &blu, &alp);
             cairo_set_source_rgba(cr, red, grn, blu, alp);
-            cairo_set_line_width(cr, 1.5);
-            cairo_rounded_rect(cr, rx + 0.75, ry + 0.75, rw - 1.5, rh - 1.5, (double)rrad);
-            cairo_stroke(cr);
+            cairo_capsule_tapered_stroke(cr, rx, ry, rw, rh, (double)rrad, 1.0, 2.8);
           }
         }
         cairo_destroy(cr);
