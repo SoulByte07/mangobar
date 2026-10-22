@@ -488,6 +488,30 @@ static void parse_int_pair(const char *s, int *a, int *b) {
     *b = *a;
 }
 
+// Parse 1-2 doubles: one value -> both; two -> vertical (thin), horizontal (thick)
+static void parse_double_pair(const char *s, double *a, double *b) {
+  char *endp = NULL;
+  while (*s && !isdigit((unsigned char)*s) && *s != '.' && *s != '-' && *s != '+')
+    s++;
+  *a = strtod(s, &endp);
+  if (*a <= 0.0)
+    *a = 1.0;
+  if (!endp || !*endp) {
+    *b = *a;
+    return;
+  }
+  const char *p = endp;
+  while (*p && !isdigit((unsigned char)*p) && *p != '.' && *p != '-' && *p != '+')
+    p++;
+  if (*p) {
+    *b = strtod(p, NULL);
+    if (*b <= 0.0)
+      *b = *a;
+  } else {
+    *b = *a;
+  }
+}
+
 static void apply_decl(StyleSheet *ss, Style *st, const char *prop,
                        const char *val) {
   uint32_t c;
@@ -518,6 +542,9 @@ static void apply_decl(StyleSheet *ss, Style *st, const char *prop,
              parse_hex_color(color_buf, &c)) {
     st->border_color = c;
     st->border_color_set = true;
+  } else if (strcmp(prop, "border-width") == 0) {
+    parse_double_pair(val, &st->border_width_thin, &st->border_width_thick);
+    st->border_width_set = true;
   } else if (strcmp(prop, "border-radius") == 0) {
     st->radius = parse_int(val);
     st->radius_set = true;
@@ -917,9 +944,14 @@ static void apply_rule(Style *dst, const StyleRule *r) {
     dst->radius = s->radius;
   if (s->min_width_set)
     dst->min_width = s->min_width;
+  if (s->border_width_set) {
+    dst->border_width_thin = s->border_width_thin;
+    dst->border_width_thick = s->border_width_thick;
+  }
   dst->color_set |= s->color_set;
   dst->background_set |= s->background_set;
   dst->border_color_set |= s->border_color_set;
+  dst->border_width_set |= s->border_width_set;
   dst->padding_left_set |= s->padding_left_set;
   dst->padding_right_set |= s->padding_right_set;
   dst->margin_top_set |= s->margin_top_set;

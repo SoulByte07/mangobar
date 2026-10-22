@@ -309,6 +309,8 @@ typedef struct {
   int margin_l, margin_r;
   int radius; // -1=pill, >=0 explicit radius (0=square)
   int min_width; // minimum module width
+  double border_width_thin; // top/bottom stroke width
+  double border_width_thick; // 'C' middle apex stroke width
   bool center; // center text (tag buttons)
 } ModuleStyle;
 
@@ -1841,9 +1843,11 @@ static void paint_tags_entry(Bar *bar, const ModuleEntry *e, const EntryGeom *g,
     double br, bg, bb, ba;
     pixman_color_to_doubles(&box->border_color, &br, &bg, &bb, &ba);
     cairo_set_source_rgba(bar_bg_cr, br, bg, bb, ba);
+    double t_thin = box->border_width_thin > 0.0 ? box->border_width_thin : 1.0;
+    double t_thick = box->border_width_thick > 0.0 ? box->border_width_thick : 2.8;
     cairo_capsule_tapered_stroke(bar_bg_cr, (double)tag_x1, (double)g_rt->bar_top,
                                  (double)tag_body_w, (double)buf_h,
-                                 module_radius(box, buf_h), 1.0, 2.8);
+                                 module_radius(box, buf_h), t_thin, t_thick);
   }
 
   // 2. Draw tag buttons inside the bubble
@@ -2661,7 +2665,9 @@ static void draw_bar(Bar *bar) {
             double red, grn, blu, alp;
             pixman_color_to_doubles(&st_bar->border_color, &red, &grn, &blu, &alp);
             cairo_set_source_rgba(cr, red, grn, blu, alp);
-            cairo_capsule_tapered_stroke(cr, bx, by, bw, bh, (double)brad, 1.0, 2.8);
+            double t_thin = st_bar->border_width_thin > 0.0 ? st_bar->border_width_thin : 1.0;
+            double t_thick = st_bar->border_width_thick > 0.0 ? st_bar->border_width_thick : 2.8;
+            cairo_capsule_tapered_stroke(cr, bx, by, bw, bh, (double)brad, t_thin, t_thick);
           }
         }
         if (right_capsule) {
@@ -2681,7 +2687,9 @@ static void draw_bar(Bar *bar) {
             double red, grn, blu, alp;
             pixman_color_to_doubles(&st_right->border_color, &red, &grn, &blu, &alp);
             cairo_set_source_rgba(cr, red, grn, blu, alp);
-            cairo_capsule_tapered_stroke(cr, rx, ry, rw, rh, (double)rrad, 1.0, 2.8);
+            double t_thin = st_right->border_width_thin > 0.0 ? st_right->border_width_thin : 1.0;
+            double t_thick = st_right->border_width_thick > 0.0 ? st_right->border_width_thick : 2.8;
+            cairo_capsule_tapered_stroke(cr, rx, ry, rw, rh, (double)rrad, t_thin, t_thick);
           }
         }
         cairo_destroy(cr);
@@ -5682,6 +5690,10 @@ static void apply_css_resolved(ModuleStyle *ms, Style s) {
     ms->radius = s.radius;
   if (s.min_width_set)
     ms->min_width = s.min_width;
+  if (s.border_width_set) {
+    ms->border_width_thin = s.border_width_thin;
+    ms->border_width_thick = s.border_width_thick;
+  }
 }
 
 static void apply_css(ModuleStyle *ms, const char *module, const char *state) {

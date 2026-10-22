@@ -25,9 +25,12 @@ typedef struct {
     int margin_right;
     int radius; // corner radius; -1 = pill, >=0 explicit (0 = square)
     int min_width; // minimum module width
+    double border_width_thin; // top/bottom thin stroke in px
+    double border_width_thick; // middle 'C' apex thick stroke in px
     bool color_set;
     bool background_set;
     bool border_color_set;
+    bool border_width_set;
     bool padding_left_set;
     bool padding_right_set;
     bool margin_top_set;
