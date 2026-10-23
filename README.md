@@ -62,7 +62,7 @@ sudo apt install meson ninja-build libcjson-dev libwayland-dev \
 ### Build
 
 ```sh
-git clone https://github.com/mangowm/mangobar.git
+git clone https://github.com/SoulByte07/mangobar.git
 cd mangobar
 meson setup build -Dprefix=/usr
 ninja -C build
