@@ -298,20 +298,32 @@ static void cairo_capsule_tapered_stroke(cairo_t *cr, double x, double y,
 }
 
 // Draw a soft ambient Gaussian-like drop shadow beneath the floating capsule
-static void cairo_capsule_drop_shadow(cairo_t *cr, double x, double y, double w, double h, double r) {
-  // 6 concentric expansion passes with decaying alpha to simulate smooth Gaussian blur
-  const int passes = 6;
-  const double max_spread = 6.0;
-  const double y_offset = 2.5;
+static void cairo_capsule_drop_shadow(cairo_t *cr, double x, double y, double w, double h, double r,
+                                      double off_x, double off_y, double blur,
+                                      double red, double grn, double blu, double max_alpha) {
+  if (blur <= 0.0)
+    blur = 6.0;
+  if (max_alpha <= 0.0)
+    max_alpha = 0.35;
+
+  // Concentric expansion passes with decaying alpha to simulate smooth Gaussian blur
+  int passes = (int)(blur * 1.2);
+  if (passes < 4) passes = 4;
+  if (passes > 12) passes = 12;
+
+  double max_spread = blur;
+  double base_alpha = (max_alpha / (double)passes) * 0.9;
 
   for (int p = passes; p >= 1; p--) {
     double frac = (double)p / (double)passes;
     double spread = frac * max_spread;
     // Ambient drop shadow: deeper near capsule edge, smooth falloff outward
-    double alpha = 0.045 * (1.0 - (frac * 0.75));
-    cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, alpha);
-    cairo_rounded_rect(cr, x - spread * 0.4, y + y_offset * frac,
-                       w + spread * 0.8, h + spread * 0.6, r + spread * 0.3);
+    double alpha = base_alpha * (1.0 - (frac * 0.65));
+    cairo_set_source_rgba(cr, red, grn, blu, alpha);
+    cairo_rounded_rect(cr, x + off_x * frac - spread * 0.4,
+                       y + off_y * frac,
+                       w + spread * 0.8, h + spread * 0.6,
+                       r + spread * 0.3);
     cairo_fill(cr);
   }
 }
@@ -330,6 +342,10 @@ typedef struct {
   int min_width; // minimum module width
   double border_width_thin; // top/bottom stroke width
   double border_width_thick; // 'C' middle apex stroke width
+  double shadow_x, shadow_y, shadow_blur;
+  pixman_color_t shadow_color;
+  bool shadow_set;
+  bool shadow_enabled;
   bool center; // center text (tag buttons)
 } ModuleStyle;
 
@@ -2673,7 +2689,17 @@ static void draw_bar(Bar *bar) {
                                    : logical_w);
           double bh = (double)buf_h;
           int brad = st_bar->radius >= 0 ? st_bar->radius : (int)bh / 2;
-          cairo_capsule_drop_shadow(cr, bx, by, bw, bh, (double)brad);
+          bool render_shadow = !st_bar->shadow_set || st_bar->shadow_enabled;
+          if (render_shadow) {
+            double sx = st_bar->shadow_set ? st_bar->shadow_x : 0.0;
+            double sy = st_bar->shadow_set ? st_bar->shadow_y : 2.5;
+            double sblur = st_bar->shadow_set ? st_bar->shadow_blur : 6.0;
+            double sr = 0.0, sg = 0.0, sb = 0.0, sa = 0.35;
+            if (st_bar->shadow_set && st_bar->shadow_color.alpha > 0) {
+              pixman_color_to_doubles(&st_bar->shadow_color, &sr, &sg, &sb, &sa);
+            }
+            cairo_capsule_drop_shadow(cr, bx, by, bw, bh, (double)brad, sx, sy, sblur, sr, sg, sb, sa);
+          }
           if (st_bar->bg.alpha > 0) {
             double red, grn, blu, alp;
             pixman_color_to_doubles(&st_bar->bg, &red, &grn, &blu, &alp);
@@ -5708,11 +5734,17 @@ static void apply_css_resolved(ModuleStyle *ms, Style s) {
     ms->margin_r = s.margin_right;
   if (s.radius_set)
     ms->radius = s.radius;
-  if (s.min_width_set)
-    ms->min_width = s.min_width;
   if (s.border_width_set) {
     ms->border_width_thin = s.border_width_thin;
     ms->border_width_thick = s.border_width_thick;
+  }
+  if (s.shadow_set) {
+    ms->shadow_x = s.shadow_x;
+    ms->shadow_y = s.shadow_y;
+    ms->shadow_blur = s.shadow_blur;
+    hex_to_pixman(s.shadow_color, &ms->shadow_color);
+    ms->shadow_set = true;
+    ms->shadow_enabled = s.shadow_enabled;
   }
 }
 

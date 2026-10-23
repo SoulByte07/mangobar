@@ -583,6 +583,59 @@ static void apply_decl(StyleSheet *ss, Style *st, const char *prop,
   } else if (strcmp(prop, "margin-right") == 0) {
     st->margin_right = parse_int(val);
     st->margin_right_set = true;
+  } else if (strcmp(prop, "box-shadow") == 0) {
+    const char *p = val;
+    while (*p && isspace((unsigned char)*p))
+      p++;
+    if (strncmp(p, "none", 4) == 0) {
+      st->shadow_enabled = false;
+      st->shadow_set = true;
+    } else {
+      char *endp = NULL;
+      st->shadow_x = strtod(p, &endp);
+      if (endp && *endp) {
+        p = endp;
+        while (*p && (isspace((unsigned char)*p) || *p == 'p' || *p == 'x'))
+          p++;
+        st->shadow_y = strtod(p, &endp);
+        if (endp && *endp) {
+          p = endp;
+          while (*p && (isspace((unsigned char)*p) || *p == 'p' || *p == 'x'))
+            p++;
+          st->shadow_blur = strtod(p, &endp);
+          if (endp && *endp) {
+            p = endp;
+            while (*p && (isspace((unsigned char)*p) || *p == 'p' || *p == 'x'))
+              p++;
+            // Optional spread radius if 4 numbers provided: e.g. 0 4px 10px 0px #color
+            if (isdigit((unsigned char)*p) || *p == '-' || *p == '+') {
+              strtod(p, &endp);
+              if (endp && *endp) {
+                p = endp;
+                while (*p && (isspace((unsigned char)*p) || *p == 'p' || *p == 'x'))
+                  p++;
+              }
+            }
+            uint32_t sc = 0;
+            if (parse_color_token(ss, p, &sc, 0)) {
+              st->shadow_color = sc;
+              st->shadow_enabled = true;
+              st->shadow_set = true;
+            } else if (resolve_color_value(ss, p, color_buf, sizeof(color_buf)) &&
+                       parse_hex_color(color_buf, &sc)) {
+              st->shadow_color = sc;
+              st->shadow_enabled = true;
+              st->shadow_set = true;
+            } else {
+              // Default to semi-transparent black if color omitted or unrecognized
+              st->shadow_color = 0x66000000;
+              st->shadow_enabled = true;
+              st->shadow_set = true;
+            }
+          }
+        }
+      }
+    }
   } else if (strcmp(prop, "font-family") == 0) {
     if (val[0]) {
       // Take only the first family name, strip quotes and fallbacks
@@ -948,10 +1001,18 @@ static void apply_rule(Style *dst, const StyleRule *r) {
     dst->border_width_thin = s->border_width_thin;
     dst->border_width_thick = s->border_width_thick;
   }
+  if (s->shadow_set) {
+    dst->shadow_x = s->shadow_x;
+    dst->shadow_y = s->shadow_y;
+    dst->shadow_blur = s->shadow_blur;
+    dst->shadow_color = s->shadow_color;
+    dst->shadow_enabled = s->shadow_enabled;
+  }
   dst->color_set |= s->color_set;
   dst->background_set |= s->background_set;
   dst->border_color_set |= s->border_color_set;
   dst->border_width_set |= s->border_width_set;
+  dst->shadow_set |= s->shadow_set;
   dst->padding_left_set |= s->padding_left_set;
   dst->padding_right_set |= s->padding_right_set;
   dst->margin_top_set |= s->margin_top_set;

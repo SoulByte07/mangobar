@@ -27,6 +27,12 @@ typedef struct {
     int min_width; // minimum module width
     double border_width_thin; // top/bottom thin stroke in px
     double border_width_thick; // middle 'C' apex thick stroke in px
+    double shadow_x;
+    double shadow_y;
+    double shadow_blur;
+    uint32_t shadow_color;
+    bool shadow_set;
+    bool shadow_enabled;
     bool color_set;
     bool background_set;
     bool border_color_set;
