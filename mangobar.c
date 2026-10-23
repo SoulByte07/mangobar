@@ -2689,7 +2689,7 @@ static void draw_bar(Bar *bar) {
                                    : logical_w);
           double bh = (double)buf_h;
           int brad = st_bar->radius >= 0 ? st_bar->radius : (int)bh / 2;
-          bool render_shadow = !st_bar->shadow_set || st_bar->shadow_enabled;
+          bool render_shadow = st_bar->shadow_set && st_bar->shadow_enabled;
           if (render_shadow) {
             double sx = st_bar->shadow_set ? st_bar->shadow_x : 0.0;
             double sy = st_bar->shadow_set ? st_bar->shadow_y : 2.5;
