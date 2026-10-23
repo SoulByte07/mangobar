@@ -6049,11 +6049,7 @@ int main(int argc, char **argv) {
     // Ensure the bar is tall enough for the text (no vertical clipping).
     if ((int)rt->bar_h < min_h)
       rt->bar_h = (uint32_t)min_h;
-    // Keep tag/layout buttons at least as wide as the bar is tall.
-    for (int j = 0; j < 5; j++)
-      if (rt->st_tags[j].min_width == 0)
-        rt->st_tags[j].min_width =
-            (int)rt->bar_h + rt->st_tags[j].margin_l + rt->st_tags[j].margin_r;
+    // Keep layout button at least as wide as the bar is tall; tags hug content / CSS min-width.
     rt->st_layout.min_width =
         (int)rt->bar_h + rt->st_layout.margin_l + rt->st_layout.margin_r;
   }
