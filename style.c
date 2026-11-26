@@ -575,8 +575,6 @@ static void apply_decl(StyleSheet *ss, Style *st, const char *prop,
   } else if (strcmp(prop, "margin-bottom") == 0) {
     st->margin_bottom = parse_int(val);
     st->margin_bottom_set = true;
-    st->margin_top = parse_int(val);
-    st->margin_top_set = true;
   } else if (strcmp(prop, "margin-left") == 0) {
     st->margin_left = parse_int(val);
     st->margin_left_set = true;
