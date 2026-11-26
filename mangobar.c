@@ -193,6 +193,35 @@ static void cairo_rounded_rect(cairo_t *cr, double x, double y, double w,
   cairo_close_path(cr);
 }
 
+/* Water-dropper notch path:
+ * Concave "ears" at top (cubic Bezier S-curves) flowing into convex rounded bottom.
+ * x, w = tight content box left-edge and width
+ * h = bar height (e.g., 32)
+ * flare = top ear spread (18)
+ * r = bottom curve spread (18)
+ * Drawn flush at y = 0 (top of bar surface)
+ */
+static void cairo_water_dropper_path(cairo_t *cr, double x, double w, double h,
+                                      double flare, double r) {
+  double y = 0.0;
+  cairo_new_path(cr);
+  // Start at left ear tip (above content box)
+  cairo_move_to(cr, x - flare, y);
+  // Left water-dropper curve: concave flare at top -> convex bottom
+  // Control point 1: (x, 0) - pulls curve inward at top
+  // Control point 2: (x, h) - pulls curve down at left edge
+  // End point: (x + r, h) - bottom left curve start
+  cairo_curve_to(cr, x, y, x, h, x + r, h);
+  // Bottom flat edge
+  cairo_line_to(cr, x + w - r, h);
+  // Right water-dropper curve: symmetric
+  // Control point 1: (x + w, h) - pulls curve down at right edge
+  // Control point 2: (x + w, 0) - pulls curve inward at top
+  // End point: (x + w + flare, 0) - right ear tip
+  cairo_curve_to(cr, x + w, h, x + w, y, x + w + flare, y);
+  cairo_close_path(cr);
+}
+
 // Draw a capsule border stroke where the curved "C" endcaps are tapered:
 // thin on top and bottom, smoothly bulging to thick at the horizontal middle apex.
 static void cairo_capsule_tapered_stroke(cairo_t *cr, double x, double y,
@@ -2682,38 +2711,115 @@ static void draw_bar(Bar *bar) {
         cairo_scale(cr, bar->scale, bar->scale);
         cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
         if (outer_capsule) {
-          double bx = (double)g_rt->bar_left;
-          double by = (double)top;
-          double bw = (double)(logical_w > (g_rt->bar_left + g_rt->bar_right)
-                                   ? logical_w - g_rt->bar_left - g_rt->bar_right
-                                   : logical_w);
-          double bh = (double)buf_h;
-          int brad = st_bar->radius >= 0 ? st_bar->radius : (int)bh / 2;
-          bool render_shadow = st_bar->shadow_set && st_bar->shadow_enabled;
-          if (render_shadow) {
-            double sx = st_bar->shadow_set ? st_bar->shadow_x : 0.0;
-            double sy = st_bar->shadow_set ? st_bar->shadow_y : 2.5;
-            double sblur = st_bar->shadow_set ? st_bar->shadow_blur : 6.0;
-            double sr = 0.0, sg = 0.0, sb = 0.0, sa = 0.35;
-            if (st_bar->shadow_set && st_bar->shadow_color.alpha > 0) {
-              pixman_color_to_doubles(&st_bar->shadow_color, &sr, &sg, &sb, &sa);
+          /* Detect "notch mode": no left/right modules, only center modules.
+           * In this mode, draw a water-dropper notch encompassing center modules
+           * instead of a full-width capsule. */
+          bool notch_mode = (g_cfg.left_count == 0 && g_cfg.right_count == 0 && g_cfg.center_count > 0);
+          
+          if (notch_mode && center_n > 0) {
+            /* Water-dropper notch: centered on center modules, flush to top (y=0) */
+            double notch_x = (double)center_left;
+            double notch_w = (double)(center_right > center_left ? center_right - center_left : 0);
+            double notch_h = (double)buf_h;
+            double flare = 18.0;  // top ear spread
+            double r = 18.0;      // bottom curve spread
+            int inner_padding = 20;  // px on each side inside the flares
+            
+            // Expand notch to include inner padding
+            notch_x -= inner_padding;
+            notch_w += 2 * inner_padding;
+            
+            // Clear the entire surface with transparent first (removes rectangular artifacts)
+            cairo_save(cr);
+            cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
+            cairo_paint(cr);
+            cairo_restore(cr);
+            
+            // Draw drop shadow for the notch (simple offset fill, no blur)
+            bool render_shadow = st_bar->shadow_set && st_bar->shadow_enabled;
+            if (render_shadow && st_bar->bg.alpha > 0) {
+              double sx = st_bar->shadow_set ? st_bar->shadow_x : 0.0;
+              double sy = st_bar->shadow_set ? st_bar->shadow_y : 3.0;
+              double sr = 0.0, sg = 0.0, sb = 0.0, sa = 0.25;
+              if (st_bar->shadow_set && st_bar->shadow_color.alpha > 0) {
+                pixman_color_to_doubles(&st_bar->shadow_color, &sr, &sg, &sb, &sa);
+              }
+              // Custom notch shadow: draw shadow path with explicit offset (avoids clip issues with translate)
+              cairo_save(cr);
+              cairo_new_path(cr);
+              double sh_x = notch_x + sx;
+              double sh_w = notch_w;
+              double sh_h = notch_h;
+              double sh_flare = flare;
+              double sh_r = r;
+              // Left ear tip
+              cairo_move_to(cr, sh_x - sh_flare, sy);
+              // Left curve
+              cairo_curve_to(cr, sh_x, sy, sh_x, sh_h + sy, sh_x + sh_r, sh_h + sy);
+              // Bottom edge
+              cairo_line_to(cr, sh_x + sh_w - sh_r, sh_h + sy);
+              // Right curve
+              cairo_curve_to(cr, sh_x + sh_w, sh_h + sy, sh_x + sh_w, sy, sh_x + sh_w + sh_flare, sy);
+              cairo_close_path(cr);
+              cairo_set_source_rgba(cr, sr, sg, sb, sa);
+              cairo_fill(cr);
+              cairo_restore(cr);
             }
-            cairo_capsule_drop_shadow(cr, bx, by, bw, bh, (double)brad, sx, sy, sblur, sr, sg, sb, sa);
-          }
-          if (st_bar->bg.alpha > 0) {
-            double red, grn, blu, alp;
-            pixman_color_to_doubles(&st_bar->bg, &red, &grn, &blu, &alp);
-            cairo_set_source_rgba(cr, red, grn, blu, alp);
-            cairo_rounded_rect(cr, bx, by, bw, bh, (double)brad);
-            cairo_fill(cr);
-          }
-          if (st_bar->border_color_set) {
-            double red, grn, blu, alp;
-            pixman_color_to_doubles(&st_bar->border_color, &red, &grn, &blu, &alp);
-            cairo_set_source_rgba(cr, red, grn, blu, alp);
-            double t_thin = st_bar->border_width_thin > 0.0 ? st_bar->border_width_thin : 1.0;
-            double t_thick = st_bar->border_width_thick > 0.0 ? st_bar->border_width_thick : 2.8;
-            cairo_capsule_tapered_stroke(cr, bx, by, bw, bh, (double)brad, t_thin, t_thick);
+            
+            // Draw notch background with CSS background color
+            if (st_bar->bg.alpha > 0) {
+              double red, grn, blu, alp;
+              pixman_color_to_doubles(&st_bar->bg, &red, &grn, &blu, &alp);
+              cairo_set_source_rgba(cr, red, grn, blu, alp);
+              cairo_water_dropper_path(cr, notch_x, notch_w, notch_h, flare, r);
+              cairo_fill(cr);
+            }
+            
+            // Draw border if configured
+            if (st_bar->border_color_set) {
+              double red, grn, blu, alp;
+              pixman_color_to_doubles(&st_bar->border_color, &red, &grn, &blu, &alp);
+              cairo_set_source_rgba(cr, red, grn, blu, alp);
+              double t_thin = st_bar->border_width_thin > 0.0 ? st_bar->border_width_thin : 1.0;
+              cairo_set_line_width(cr, t_thin);
+              cairo_water_dropper_path(cr, notch_x, notch_w, notch_h, flare, r);
+              cairo_stroke(cr);
+            }
+          } else {
+            /* Original full-width capsule rendering */
+            double bx = (double)g_rt->bar_left;
+            double by = (double)top;
+            double bw = (double)(logical_w > (g_rt->bar_left + g_rt->bar_right)
+                                     ? logical_w - g_rt->bar_left - g_rt->bar_right
+                                     : logical_w);
+            double bh = (double)buf_h;
+            int brad = st_bar->radius >= 0 ? st_bar->radius : (int)bh / 2;
+            bool render_shadow = st_bar->shadow_set && st_bar->shadow_enabled;
+            if (render_shadow) {
+              double sx = st_bar->shadow_set ? st_bar->shadow_x : 0.0;
+              double sy = st_bar->shadow_set ? st_bar->shadow_y : 2.5;
+              double sblur = st_bar->shadow_set ? st_bar->shadow_blur : 6.0;
+              double sr = 0.0, sg = 0.0, sb = 0.0, sa = 0.35;
+              if (st_bar->shadow_set && st_bar->shadow_color.alpha > 0) {
+                pixman_color_to_doubles(&st_bar->shadow_color, &sr, &sg, &sb, &sa);
+              }
+              cairo_capsule_drop_shadow(cr, bx, by, bw, bh, (double)brad, sx, sy, sblur, sr, sg, sb, sa);
+            }
+            if (st_bar->bg.alpha > 0) {
+              double red, grn, blu, alp;
+              pixman_color_to_doubles(&st_bar->bg, &red, &grn, &blu, &alp);
+              cairo_set_source_rgba(cr, red, grn, blu, alp);
+              cairo_rounded_rect(cr, bx, by, bw, bh, (double)brad);
+              cairo_fill(cr);
+            }
+            if (st_bar->border_color_set) {
+              double red, grn, blu, alp;
+              pixman_color_to_doubles(&st_bar->border_color, &red, &grn, &blu, &alp);
+              cairo_set_source_rgba(cr, red, grn, blu, alp);
+              double t_thin = st_bar->border_width_thin > 0.0 ? st_bar->border_width_thin : 1.0;
+              double t_thick = st_bar->border_width_thick > 0.0 ? st_bar->border_width_thick : 2.8;
+              cairo_capsule_tapered_stroke(cr, bx, by, bw, bh, (double)brad, t_thin, t_thick);
+            }
           }
         }
         if (right_capsule) {
